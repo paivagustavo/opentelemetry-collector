@@ -17,6 +17,10 @@ package obsmetrics // import "go.opentelemetry.io/collector/internal/obsreportco
 import (
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric/global"
+	"go.opentelemetry.io/otel/metric/instrument"
+	"go.opentelemetry.io/otel/metric/unit"
 )
 
 const (
@@ -49,6 +53,9 @@ var (
 	TagKeyReceiver, _  = tag.NewKey(ReceiverKey)
 	TagKeyTransport, _ = tag.NewKey(TransportKey)
 
+	OTagKeyReceiver  = attribute.Key(ReceiverKey)
+	OTagKeyTransport = attribute.Key(TransportKey)
+
 	ReceiverPrefix                  = ReceiverKey + NameSep
 	ReceiveTraceDataOperationSuffix = NameSep + "TraceDataReceived"
 	ReceiverMetricsOperationSuffix  = NameSep + "MetricsReceived"
@@ -63,6 +70,13 @@ var (
 		ReceiverPrefix+AcceptedSpansKey,
 		"Number of spans successfully pushed into the pipeline.",
 		stats.UnitDimensionless)
+
+	OReceiverAcceptedSpans, _ = global.Meter("otel-col").SyncInt64().Counter(
+		ReceiverPrefix+AcceptedSpansKey,
+		instrument.WithDescription("Number of spans successfully pushed into the pipeline."),
+		instrument.WithUnit(unit.Dimensionless),
+	)
+
 	ReceiverRefusedSpans = stats.Int64(
 		ReceiverPrefix+RefusedSpansKey,
 		"Number of spans that could not be pushed into the pipeline.",

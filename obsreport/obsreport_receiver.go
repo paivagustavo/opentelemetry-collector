@@ -16,6 +16,9 @@ package obsreport // import "go.opentelemetry.io/collector/obsreport"
 
 import (
 	"context"
+	"github.com/lightstep/otel-launcher-go/launcher"
+	"go.opentelemetry.io/otel/metric/global"
+	"time"
 
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
@@ -36,6 +39,7 @@ type Receiver struct {
 	longLivedCtx   bool
 	mutators       []tag.Mutator
 	tracer         trace.Tracer
+	attrs          []attribute.KeyValue
 }
 
 // ReceiverSettings are settings for creating an Receiver.
@@ -53,11 +57,32 @@ type ReceiverSettings struct {
 
 // NewReceiver creates a new Receiver.
 func NewReceiver(cfg ReceiverSettings) *Receiver {
+	_ = launcher.ConfigureOpentelemetry(
+		launcher.WithServiceName("otel-col-telemetry-pipeline"),
+	)
+
+	ctx := context.Background()
+
+	metric := global.Meter("otel-col")
+
+	counter, _ := metric.SyncInt64().Counter("custom_collector_counter")
+
+	go func() {
+		for {
+			counter.Add(ctx, 1)
+			time.Sleep(10 * time.Second)
+		}
+	}()
+
 	return &Receiver{
 		level:          cfg.ReceiverCreateSettings.TelemetrySettings.MetricsLevel,
 		spanNamePrefix: obsmetrics.ReceiverPrefix + cfg.ReceiverID.String(),
 		transport:      cfg.Transport,
 		longLivedCtx:   cfg.LongLivedCtx,
+		attrs: []attribute.KeyValue{
+			obsmetrics.OTagKeyReceiver.String(cfg.ReceiverID.String()),
+			obsmetrics.OTagKeyTransport.String(cfg.Transport),
+		},
 		mutators: []tag.Mutator{
 			tag.Upsert(obsmetrics.TagKeyReceiver, cfg.ReceiverID.String(), tag.WithTTL(tag.TTLNoPropagation)),
 			tag.Upsert(obsmetrics.TagKeyTransport, cfg.Transport, tag.WithTTL(tag.TTLNoPropagation)),
@@ -161,6 +186,10 @@ func (rec *Receiver) endOp(
 	}
 
 	span := trace.SpanFromContext(receiverCtx)
+	switch dataType {
+	case config.TracesDataType:
+		obsmetrics.OReceiverAcceptedSpans.Add(receiverCtx, int64(numAccepted), rec.attrs...)
+	}
 
 	if rec.level != configtelemetry.LevelNone {
 		var acceptedMeasure, refusedMeasure *stats.Int64Measure
